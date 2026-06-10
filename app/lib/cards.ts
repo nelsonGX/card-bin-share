@@ -4,6 +4,7 @@
 // SERVER-SIDE ONLY (imports the secret-bearing fga client).
 import crypto from "node:crypto";
 import { dataGet, dataSet, dataDelete, dataList } from "./fga";
+import { detectBrand, type CardBrand } from "./cardBrand";
 
 export type Card = {
   id: string;
@@ -23,6 +24,7 @@ export type CardSummary = {
   ownerSub: string;
   ownerName: string;
   last4: string;
+  brand: CardBrand; // derived from the number server-side; safe to expose
   expiry: string;
   price: number;
   createdAt: number;
@@ -37,6 +39,7 @@ function toSummary(c: Card): CardSummary {
     ownerSub: c.ownerSub,
     ownerName: c.ownerName,
     last4: c.number.slice(-4),
+    brand: detectBrand(c.number),
     expiry: c.expiry,
     price: c.price,
     createdAt: c.createdAt,

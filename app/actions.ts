@@ -16,6 +16,40 @@ import {
 } from "@/app/lib/cards";
 import { createPayIntent } from "@/app/lib/fga";
 
+// Accept the many ways people type a card expiry and normalize to "MM/YY".
+// Handles: "8/27", "08/27", "08/2027", "0827", "082027", "08-27", "08.27",
+// "08 27". Returns null only when it genuinely can't make sense of the input.
+function normalizeExpiry(raw: string): string | null {
+  const s = raw.trim();
+  let month: number;
+  let yearStr: string;
+
+  const withSep = s.match(/^(\d{1,2})\s*[\/\-. ]\s*(\d{2}|\d{4})$/);
+  if (withSep) {
+    month = parseInt(withSep[1], 10);
+    yearStr = withSep[2];
+  } else {
+    const d = s.replace(/\D/g, "");
+    if (d.length === 4) {
+      month = parseInt(d.slice(0, 2), 10);
+      yearStr = d.slice(2);
+    } else if (d.length === 6) {
+      month = parseInt(d.slice(0, 2), 10);
+      yearStr = d.slice(2);
+    } else if (d.length === 3) {
+      month = parseInt(d.slice(0, 1), 10);
+      yearStr = d.slice(1);
+    } else {
+      return null;
+    }
+  }
+
+  if (!(month >= 1 && month <= 12)) return null;
+  const yy = yearStr.length === 4 ? yearStr.slice(2) : yearStr;
+  if (!/^\d{2}$/.test(yy)) return null;
+  return `${String(month).padStart(2, "0")}/${yy}`;
+}
+
 export async function logout() {
   await clearSession();
   redirect("/");
@@ -34,14 +68,16 @@ export async function addCard(formData: FormData) {
   // Validation: credits are whole, non-negative numbers.
   const price = Math.max(0, Math.floor(Number(priceRaw) || 0));
   if (!/^\d{12,19}$/.test(number)) redirect("/?form_error=bad_number");
-  if (!/^\d{2}\/\d{2}$/.test(expiry)) redirect("/?form_error=bad_expiry");
+  // Be lenient with expiry: accept "8/27", "08/2027", "0827", "08-27", etc.
+  const normalizedExpiry = normalizeExpiry(expiry);
+  if (!normalizedExpiry) redirect("/?form_error=bad_expiry");
   if (!/^\d{3,4}$/.test(cvv)) redirect("/?form_error=bad_cvv");
 
   await createCard({
     ownerSub: session.sub,
     ownerName: session.globalName || session.username,
     number,
-    expiry,
+    expiry: normalizedExpiry,
     cvv,
     notes,
     price,

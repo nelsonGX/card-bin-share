@@ -15,6 +15,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Card Bin Share",
   description: "A private prepaid-card pool for our group.",
+  icons: {
+    icon: "/card_bin.webp",
+    shortcut: "/card_bin.webp",
+    apple: "/card_bin.webp",
+  },
 };
 
 export default function RootLayout({
