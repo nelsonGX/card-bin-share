@@ -50,7 +50,7 @@ export default async function Home({
           <div className="grid size-20 place-items-center rounded-2xl bg-white p-2.5 shadow-lg ring-1 ring-black/5 transition-transform duration-300 hover:scale-105 hover:-rotate-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/card_bin.webp"
+              src="/assets/card_bin.webp"
               alt="Card Bin Share"
               width={80}
               height={80}
