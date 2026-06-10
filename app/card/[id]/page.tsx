@@ -1,8 +1,14 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/app/lib/auth";
-import { getCard, isUnlocked, canViewFree } from "@/app/lib/cards";
-import { unlockCard, removeCard } from "@/app/actions";
+import {
+  getCard,
+  isUnlocked,
+  canViewFree,
+  listReports,
+  type CardReport,
+} from "@/app/lib/cards";
+import { unlockCard, removeCard, reportCard } from "@/app/actions";
 import CopyField from "@/app/components/CopyField";
 import BrandMark from "@/app/components/BrandMark";
 import { detectBrand } from "@/app/lib/cardBrand";
@@ -36,6 +42,9 @@ export default async function CardPage({
   const owned = card.ownerSub === session.sub;
   const reveal = canViewFree(session.sub, card) || (await isUnlocked(session.sub, id));
   const payMsg = pay ? PAY_MESSAGES[pay] : undefined;
+
+  const reports = await listReports(id);
+  const myVerdict = reports.find((r) => r.sub === session.sub)?.verdict ?? null;
 
   return (
     <main className="mx-auto w-full max-w-lg flex-1 px-5 py-8 sm:px-6 sm:py-12">
@@ -140,7 +149,112 @@ export default async function CardPage({
           </p>
         </div>
       )}
+
+      <ReportsPanel
+        cardId={card.id}
+        reports={reports}
+        myVerdict={myVerdict}
+        canReport={reveal}
+      />
     </main>
+  );
+}
+
+/* ---- Validity reports ---- */
+function ReportsPanel({
+  cardId,
+  reports,
+  myVerdict,
+  canReport,
+}: {
+  cardId: string;
+  reports: CardReport[];
+  myVerdict: "valid" | "invalid" | null;
+  canReport: boolean;
+}) {
+  const valid = reports.filter((r) => r.verdict === "valid").length;
+  const invalid = reports.filter((r) => r.verdict === "invalid").length;
+
+  return (
+    <section className="surface animate-fade-in-up mt-6 rounded-2xl p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-base font-semibold tracking-tight">Does it work?</h2>
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-600 dark:text-emerald-300">
+            <CheckGlyph className="size-3.5" />
+            {valid}
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2.5 py-1 text-rose-600 dark:text-rose-300">
+            <CrossGlyph className="size-3.5" />
+            {invalid}
+          </span>
+        </div>
+      </div>
+
+      {canReport ? (
+        <form action={reportCard} className="mb-4 flex gap-3">
+          <input type="hidden" name="id" value={cardId} />
+          <button
+            name="verdict"
+            value="valid"
+            className={`btn h-10 flex-1 text-sm ${
+              myVerdict === "valid" ? "btn-primary" : "btn-ghost"
+            }`}
+          >
+            <CheckGlyph className="size-4" />
+            Works
+          </button>
+          <button
+            name="verdict"
+            value="invalid"
+            className={`btn h-10 flex-1 text-sm ${
+              myVerdict === "invalid" ? "btn-danger" : "btn-ghost"
+            }`}
+          >
+            <CrossGlyph className="size-4" />
+            Doesn&apos;t work
+          </button>
+        </form>
+      ) : (
+        <p className="mb-4 text-sm text-muted">
+          Unlock this card to report whether it works.
+        </p>
+      )}
+
+      {reports.length === 0 ? (
+        <p className="text-sm text-muted">No reports yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {reports.map((r) => (
+            <li
+              key={r.sub}
+              className="flex items-center justify-between gap-3 text-sm"
+            >
+              <span className="truncate font-medium">{r.name}</span>
+              <span
+                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  r.verdict === "valid"
+                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                    : "bg-rose-500/10 text-rose-600 dark:text-rose-300"
+                }`}
+              >
+                {r.verdict === "valid" ? (
+                  <>
+                    <CheckGlyph className="size-3" />
+                    Works
+                  </>
+                ) : (
+                  <>
+                    <CrossGlyph className="size-3" />
+                    Doesn&apos;t work
+                  </>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -188,6 +302,34 @@ function TrashGlyph({ className }: { className?: string }) {
         d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-13"
         stroke="currentColor"
         strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CheckGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
+      <path
+        d="m5 13 4 4L19 7"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CrossGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
+      <path
+        d="M6 6l12 12M18 6 6 18"
+        stroke="currentColor"
+        strokeWidth="2.2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

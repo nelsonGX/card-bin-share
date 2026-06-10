@@ -13,6 +13,7 @@ import {
   getCard,
   isUnlocked,
   canViewFree,
+  setReport,
 } from "@/app/lib/cards";
 import { createPayIntent } from "@/app/lib/fga";
 
@@ -128,4 +129,28 @@ export async function unlockCard(formData: FormData) {
   });
 
   redirect(intent.url);
+}
+
+// Vouch for (or flag) a card after testing it. One verdict per user; voting
+// again overwrites the previous one. Only people who can see the card's full
+// details may report — you can't judge a card you haven't unlocked.
+export async function reportCard(formData: FormData) {
+  const session = await getSession();
+  if (!session) redirect("/");
+
+  const id = String(formData.get("id") ?? "");
+  const verdict = String(formData.get("verdict") ?? "");
+  if (verdict !== "valid" && verdict !== "invalid") redirect(`/card/${id}`);
+
+  const card = await getCard(id);
+  if (!card) redirect("/");
+
+  const canSee =
+    canViewFree(session.sub, card) || (await isUnlocked(session.sub, id));
+  if (!canSee) redirect(`/card/${id}`);
+
+  await setReport(id, session.sub, session.globalName || session.username, verdict);
+
+  revalidatePath(`/card/${id}`);
+  redirect(`/card/${id}`);
 }

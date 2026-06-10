@@ -1,6 +1,7 @@
 // Card model on top of the Friend Group Auth hosted JSON store.
-//   - app scope, key `card:<id>`     → the full card record (shared catalog)
-//   - user scope, key `unlock:<id>`  → marker that this user has paid to view
+//   - app scope, key `card:<id>`            → the full card record (shared catalog)
+//   - app scope, key `report:<id>:<sub>`    → one user's valid/invalid verdict
+//   - user scope, key `unlock:<id>`         → marker that this user has paid to view
 // SERVER-SIDE ONLY (imports the secret-bearing fga client).
 import { dataGet, dataSet, dataDelete, dataList } from "./fga";
 import { detectBrand, type CardBrand } from "./cardBrand";
@@ -29,8 +30,21 @@ export type CardSummary = {
   createdAt: number;
 };
 
+// A viewer's report on whether a card still works.
+export type Verdict = "valid" | "invalid";
+
+export type CardReport = {
+  cardId: string;
+  sub: string;
+  name: string;
+  verdict: Verdict;
+  at: number;
+};
+
 const CARD_PREFIX = "card:";
 const unlockKey = (cardId: string) => `unlock:${cardId}`;
+const reportPrefix = (cardId: string) => `report:${cardId}:`;
+const reportKey = (cardId: string, sub: string) => `${reportPrefix(cardId)}${sub}`;
 
 function toSummary(c: Card): CardSummary {
   return {
@@ -82,7 +96,29 @@ export async function createCard(input: {
 }
 
 export async function deleteCard(id: string): Promise<void> {
-  await dataDelete("app", `${CARD_PREFIX}${id}`);
+  // Remove the card and any validity reports left behind for it.
+  const reports = await dataList("app", { prefix: reportPrefix(id) });
+  await Promise.all([
+    dataDelete("app", `${CARD_PREFIX}${id}`),
+    ...reports.map((r) => dataDelete("app", r.key)),
+  ]);
+}
+
+/** Record (or overwrite) this user's verdict on whether a card still works. */
+export async function setReport(
+  cardId: string,
+  sub: string,
+  name: string,
+  verdict: Verdict,
+): Promise<void> {
+  const report: CardReport = { cardId, sub, name, verdict, at: Date.now() };
+  await dataSet("app", reportKey(cardId, sub), report);
+}
+
+/** All reports for a card, newest first. */
+export async function listReports(cardId: string): Promise<CardReport[]> {
+  const entries = await dataList<CardReport>("app", { prefix: reportPrefix(cardId) });
+  return entries.map((e) => e.value).sort((a, b) => b.at - a.at);
 }
 
 export async function isUnlocked(sub: string, cardId: string): Promise<boolean> {
