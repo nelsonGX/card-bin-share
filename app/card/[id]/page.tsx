@@ -7,6 +7,8 @@ import CopyField from "@/app/components/CopyField";
 import BrandMark from "@/app/components/BrandMark";
 import { detectBrand } from "@/app/lib/cardBrand";
 
+export const runtime = "edge";
+
 const PAY_MESSAGES: Record<string, { text: string; tone: "ok" | "warn" }> = {
   success: { text: "Payment confirmed — card unlocked.", tone: "ok" },
   cancelled: { text: "Payment cancelled.", tone: "warn" },

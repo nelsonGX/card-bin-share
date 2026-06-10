@@ -2,11 +2,12 @@
 // Sessions are stateless: a signed (HMAC-SHA256) JSON payload in an httpOnly
 // cookie. The signing key is AUTH_SESSION_SECRET, kept server-side.
 import { cookies } from "next/headers";
-import crypto from "node:crypto";
 
 const SESSION_COOKIE = "cb_session";
 const OAUTH_COOKIE = "cb_oauth";
 const SESSION_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 function secret(): string {
   const s = process.env.AUTH_SESSION_SECRET;
@@ -16,34 +17,60 @@ function secret(): string {
 
 // --- base64url + signing -------------------------------------------------
 
-function b64url(buf: Buffer): string {
-  return buf.toString("base64url");
+function b64url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function sign(payload: string): string {
-  return crypto.createHmac("sha256", secret()).update(payload).digest("base64url");
+function b64urlDecode(value: string): Uint8Array {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function sign(payload: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret()),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return b64url(new Uint8Array(signature));
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const aa = encoder.encode(a);
+  const bb = encoder.encode(b);
+  if (aa.length !== bb.length) return false;
+
+  let diff = 0;
+  for (let i = 0; i < aa.length; i++) diff |= aa[i] ^ bb[i];
+  return diff === 0;
 }
 
 /** Pack an object into a `payload.signature` string. */
-function pack(obj: unknown): string {
-  const payload = b64url(Buffer.from(JSON.stringify(obj)));
-  return `${payload}.${sign(payload)}`;
+async function pack(obj: unknown): Promise<string> {
+  const payload = b64url(encoder.encode(JSON.stringify(obj)));
+  return `${payload}.${await sign(payload)}`;
 }
 
 /** Verify and unpack a `payload.signature` string; null if tampered/invalid. */
-function unpack<T>(token: string | undefined): T | null {
+async function unpack<T>(token: string | undefined): Promise<T | null> {
   if (!token) return null;
   const dot = token.lastIndexOf(".");
   if (dot < 0) return null;
   const payload = token.slice(0, dot);
   const sig = token.slice(dot + 1);
-  const expected = sign(payload);
-  // constant-time compare
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  const expected = await sign(payload);
+  if (!constantTimeEqual(sig, expected)) return null;
   try {
-    return JSON.parse(Buffer.from(payload, "base64url").toString()) as T;
+    return JSON.parse(decoder.decode(b64urlDecode(payload))) as T;
   } catch {
     return null;
   }
@@ -62,7 +89,7 @@ export type Session = {
 
 export async function getSession(): Promise<Session | null> {
   const store = await cookies();
-  const session = unpack<Session>(store.get(SESSION_COOKIE)?.value);
+  const session = await unpack<Session>(store.get(SESSION_COOKIE)?.value);
   if (!session) return null;
   if (typeof session.exp !== "number" || session.exp * 1000 < Date.now()) return null;
   return session;
@@ -84,7 +111,7 @@ export async function createSession(user: {
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SEC,
   };
   const store = await cookies();
-  store.set(SESSION_COOKIE, pack(session), {
+  store.set(SESSION_COOKIE, await pack(session), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -102,16 +129,22 @@ export async function clearSession(): Promise<void> {
 
 export type OAuthState = { state: string; codeVerifier: string };
 
-export function createPkce(): { state: string; codeVerifier: string; codeChallenge: string } {
-  const codeVerifier = b64url(crypto.randomBytes(32));
-  const codeChallenge = b64url(crypto.createHash("sha256").update(codeVerifier).digest());
-  const state = b64url(crypto.randomBytes(16));
+export async function createPkce(): Promise<{
+  state: string;
+  codeVerifier: string;
+  codeChallenge: string;
+}> {
+  const codeVerifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  const codeChallenge = b64url(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(codeVerifier))),
+  );
+  const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
   return { state, codeVerifier, codeChallenge };
 }
 
 export async function stashOAuth(data: OAuthState): Promise<void> {
   const store = await cookies();
-  store.set(OAUTH_COOKIE, pack(data), {
+  store.set(OAUTH_COOKIE, await pack(data), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -122,7 +155,7 @@ export async function stashOAuth(data: OAuthState): Promise<void> {
 
 export async function consumeOAuth(): Promise<OAuthState | null> {
   const store = await cookies();
-  const data = unpack<OAuthState>(store.get(OAUTH_COOKIE)?.value);
+  const data = await unpack<OAuthState>(store.get(OAUTH_COOKIE)?.value);
   store.set(OAUTH_COOKIE, "", { httpOnly: true, path: "/", maxAge: 0 });
   return data;
 }

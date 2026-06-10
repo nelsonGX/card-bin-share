@@ -6,6 +6,8 @@ import {
   requestOrigin,
 } from "@/app/lib/auth";
 
+export const runtime = "edge";
+
 // OAuth callback: verify state, exchange the code, require allowed === true,
 // then create a local session keyed on the stable `sub`.
 export async function GET(request: NextRequest) {

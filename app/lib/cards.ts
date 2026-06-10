@@ -2,7 +2,6 @@
 //   - app scope, key `card:<id>`     → the full card record (shared catalog)
 //   - user scope, key `unlock:<id>`  → marker that this user has paid to view
 // SERVER-SIDE ONLY (imports the secret-bearing fga client).
-import crypto from "node:crypto";
 import { dataGet, dataSet, dataDelete, dataList } from "./fga";
 import { detectBrand, type CardBrand } from "./cardBrand";
 

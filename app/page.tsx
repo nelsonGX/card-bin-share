@@ -5,6 +5,8 @@ import { addCard, logout } from "@/app/actions";
 import BrandMark from "@/app/components/BrandMark";
 import CardNumberInput from "@/app/components/CardNumberInput";
 
+export const runtime = "edge";
+
 const AUTH_ERRORS: Record<string, string> = {
   not_allowed: "That Discord account isn't a member of the group.",
   state_mismatch: "Login session expired — please try again.",

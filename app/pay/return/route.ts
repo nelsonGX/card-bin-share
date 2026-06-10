@@ -3,6 +3,8 @@ import { verifyPay } from "@/app/lib/fga";
 import { getSession, requestOrigin } from "@/app/lib/auth";
 import { grantUnlock } from "@/app/lib/cards";
 
+export const runtime = "edge";
+
 // Return from the provider's pay page. Re-verify server-side; only grant the
 // unlock when paid === true and the payer matches the logged-in user.
 export async function GET(request: NextRequest) {
